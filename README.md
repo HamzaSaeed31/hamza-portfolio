@@ -2,7 +2,7 @@
 
 My personal portfolio — built with plain HTML, CSS, and JS. No frameworks, no build step, just open it in a browser.
 
-Live at: hamzasaeed.me
+Live at: www.hamzasaeed.me
 
 ---
 
