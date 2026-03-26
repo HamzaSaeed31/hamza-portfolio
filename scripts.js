@@ -1,140 +1,188 @@
-/* =============================================
-   PORTFOLIO — Scroll Animations Engine
-   ============================================= */
-
 'use strict';
 
-// ─── Always start at top on reload ───────────
+/* ============================================================
+   UTILITIES
+   ============================================================ */
+const lerp  = (a, b, t) => a + (b - a) * t;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/* ─── Shared scroll state ────────────────────────────────────
+   ONE passive listener updates scrollY. Every feature reads
+   from this variable — zero competing layout reads per frame.
+   ─────────────────────────────────────────────────────────── */
+let scrollY = window.scrollY;
+window.addEventListener('scroll', () => { scrollY = window.scrollY; }, { passive: true });
+
+/* ─── Cached viewport — updated on resize ─────────────────── */
+let vpW = window.innerWidth;
+let vpH = window.innerHeight;
+let isMobile = vpW <= 1024;
+window.addEventListener('resize', () => {
+  vpW      = window.innerWidth;
+  vpH      = window.innerHeight;
+  isMobile = vpW <= 1024;
+}, { passive: true });
+
+/* ─── Always start at top ──────────────────────────────────── */
 history.scrollRestoration = 'manual';
 window.scrollTo(0, 0);
 
-// ─── Lerp utility ────────────────────────────
-const lerp = (a, b, t) => a + (b - a) * t;
-const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-const map = (v, inMin, inMax, outMin, outMax) =>
-  ((v - inMin) / (inMax - inMin)) * (outMax - outMin) + outMin;
+const isTouchDevice = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
 
-// ─── Glass Morphic Cursor ─────────────────────
-const cursor         = document.getElementById('cursor');
-const cursorFollower = document.getElementById('cursorFollower');
-let mouseX = 0, mouseY = 0, followerX = 0, followerY = 0;
-let prevMouseX = 0, prevMouseY = 0;
 
-const shimmer = document.createElement('div');
-shimmer.classList.add('cf-shimmer');
-cursorFollower.appendChild(shimmer);
+/* ============================================================
+   CURSOR  (pointer devices only)
+   ============================================================ */
+const cursorEl    = document.getElementById('cursor');
+const cursorFollow = document.getElementById('cursorFollower');
 
-document.addEventListener('mousemove', e => {
-  mouseX = e.clientX; mouseY = e.clientY;
-  cursor.style.left = mouseX + 'px';
-  cursor.style.top  = mouseY + 'px';
-  const dx    = mouseX - prevMouseX;
-  const dy    = mouseY - prevMouseY;
-  const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-  shimmer.style.transform = `rotate(${angle}deg)`;
-  prevMouseX = mouseX; prevMouseY = mouseY;
-});
+if (!isTouchDevice && cursorEl && cursorFollow) {
+  let mouseX = 0, mouseY = 0, followerX = 0, followerY = 0;
+  let prevMX = 0, prevMY = 0;
 
-(function animateFollower() {
-  followerX = lerp(followerX, mouseX, 0.10);
-  followerY = lerp(followerY, mouseY, 0.10);
-  cursorFollower.style.left = followerX + 'px';
-  cursorFollower.style.top  = followerY + 'px';
-  requestAnimationFrame(animateFollower);
-})();
+  const shimmer = document.createElement('div');
+  shimmer.classList.add('cf-shimmer');
+  cursorFollow.appendChild(shimmer);
 
-const hoverEls = document.querySelectorAll(
-  'a, button, .skill-pill, .service-card, .proj-card, .social-btn, .chip, .nav-link, .proj-link, .ace-tl-card'
-);
-hoverEls.forEach(el => {
-  el.addEventListener('mouseenter', () => {
-    cursor.classList.add('hover');
-    cursorFollower.classList.add('hover');
+  document.addEventListener('mousemove', e => {
+    mouseX = e.clientX; mouseY = e.clientY;
+    cursorEl.style.left = mouseX + 'px';
+    cursorEl.style.top  = mouseY + 'px';
+    const angle = Math.atan2(mouseY - prevMY, mouseX - prevMX) * (180 / Math.PI);
+    shimmer.style.transform = `rotate(${angle}deg)`;
+    prevMX = mouseX; prevMY = mouseY;
   });
-  el.addEventListener('mouseleave', () => {
-    cursor.classList.remove('hover');
-    cursorFollower.classList.remove('hover');
+
+  (function animateFollower() {
+    followerX = lerp(followerX, mouseX, 0.10);
+    followerY = lerp(followerY, mouseY, 0.10);
+    cursorFollow.style.left = followerX + 'px';
+    cursorFollow.style.top  = followerY + 'px';
+    requestAnimationFrame(animateFollower);
+  })();
+
+  document.querySelectorAll(
+    'a, button, .skill-pill, .service-card, .proj-card, .social-btn, .chip, .nav-link, .proj-link, .ace-tl-card'
+  ).forEach(el => {
+    el.addEventListener('mouseenter', () => { cursorEl.classList.add('hover'); cursorFollow.classList.add('hover'); });
+    el.addEventListener('mouseleave', () => { cursorEl.classList.remove('hover'); cursorFollow.classList.remove('hover'); });
   });
-});
 
-document.addEventListener('mouseleave', () => {
-  cursor.style.opacity         = '0';
-  cursorFollower.style.opacity = '0';
-});
-document.addEventListener('mouseenter', () => {
-  cursor.style.opacity         = '1';
-  cursorFollower.style.opacity = '1';
-});
+  document.addEventListener('mouseleave', () => { cursorEl.style.opacity = cursorFollow.style.opacity = '0'; });
+  document.addEventListener('mouseenter', () => { cursorEl.style.opacity = cursorFollow.style.opacity = '1'; });
+}
 
 
-// ─── Navbar ──────────────────────────────────
-const nav = document.getElementById('nav');
-const sections = document.querySelectorAll('section[id]');
+/* ============================================================
+   AMBIENT CURSOR GLOW  (uses transform — no layout triggers)
+   ============================================================ */
+if (!isTouchDevice) {
+  const glow = document.createElement('div');
+  glow.style.cssText = [
+    'position:fixed', 'width:400px', 'height:400px', 'border-radius:50%',
+    'background:radial-gradient(circle,rgba(217,119,6,0.06) 0%,transparent 70%)',
+    'pointer-events:none', 'z-index:0',
+    'left:0', 'top:0',
+    'transform:translate(-200px,-200px)',
+    'transition:transform 0.8s ease',
+    'will-change:transform',
+  ].join(';');
+  document.body.appendChild(glow);
+  document.addEventListener('mousemove', e => {
+    glow.style.transform = `translate(${e.clientX - 200}px,${e.clientY - 200}px)`;
+  });
+}
 
-window.addEventListener('scroll', () => {
-  nav.classList.toggle('scrolled', window.scrollY > 60);
+
+/* ============================================================
+   NAVBAR
+   ============================================================ */
+const nav      = document.getElementById('nav');
+const sections = Array.from(document.querySelectorAll('section[id]'));
+const navLinks = Array.from(document.querySelectorAll('.nav-link'));
+
+function updateNavbar() {
+  nav.classList.toggle('scrolled', scrollY > 60);
   let current = '';
-  sections.forEach(sec => { if (window.scrollY >= sec.offsetTop - 140) current = sec.id; });
-  document.querySelectorAll('.nav-link').forEach(link => {
-    link.classList.toggle('active', link.getAttribute('href') === '#' + current);
-  });
-}, { passive: true });
+  for (const sec of sections) {
+    if (scrollY >= sec.offsetTop - 140) current = sec.id;
+  }
+  const hash = '#' + current;
+  for (const link of navLinks) link.classList.toggle('active', link.getAttribute('href') === hash);
+}
+
+window.addEventListener('scroll', updateNavbar, { passive: true });
 
 
-// ─── Mobile Menu ─────────────────────────────
+/* ============================================================
+   MOBILE MENU
+   ============================================================ */
 const hamburger  = document.getElementById('hamburger');
 const mobileMenu = document.getElementById('mobileMenu');
 let menuOpen = false;
+
+function closeMobileMenu() {
+  menuOpen = false;
+  mobileMenu.classList.remove('open');
+  document.body.style.overflow = '';
+  hamburger.querySelectorAll('span').forEach(s => { s.style.transform = ''; s.style.opacity = ''; });
+}
 
 hamburger.addEventListener('click', () => {
   menuOpen = !menuOpen;
   mobileMenu.classList.toggle('open', menuOpen);
   document.body.style.overflow = menuOpen ? 'hidden' : '';
-  const spans = hamburger.querySelectorAll('span');
+  const [s0, s1, s2] = hamburger.querySelectorAll('span');
   if (menuOpen) {
-    spans[0].style.transform = 'rotate(45deg) translate(5px,5px)';
-    spans[1].style.opacity   = '0';
-    spans[2].style.transform = 'rotate(-45deg) translate(5px,-5px)';
+    s0.style.transform = 'rotate(45deg) translate(5px,5px)';
+    s1.style.opacity   = '0';
+    s2.style.transform = 'rotate(-45deg) translate(5px,-5px)';
   } else {
-    spans.forEach(s => { s.style.transform = ''; s.style.opacity = ''; });
+    closeMobileMenu();
   }
 });
-document.querySelectorAll('.mobile-link').forEach(link => {
-  link.addEventListener('click', () => {
-    menuOpen = false;
-    mobileMenu.classList.remove('open');
-    document.body.style.overflow = '';
-    hamburger.querySelectorAll('span').forEach(s => { s.style.transform = ''; s.style.opacity = ''; });
-  });
-});
+
+document.querySelectorAll('.mobile-link').forEach(link => link.addEventListener('click', closeMobileMenu));
 
 
-// ─── Smooth anchor scroll ────────────────────
+/* ============================================================
+   SMOOTH ANCHOR SCROLL
+   ============================================================ */
 document.querySelectorAll('a[href^="#"]').forEach(a => {
   a.addEventListener('click', e => {
     const href = a.getAttribute('href');
     e.preventDefault();
-    if (href === '#hero' || href === '#') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
-    }
+    if (href === '#hero' || href === '#') { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
     const target = document.querySelector(href);
-    if (target) {
-      window.scrollTo({ top: target.offsetTop - 72, behavior: 'smooth' });
-    }
+    if (target) window.scrollTo({ top: target.offsetTop - 72, behavior: 'smooth' });
   });
 });
 
 
-// ─── Intersection Observer — Standard Reveals ─
-const revealObs = new IntersectionObserver((entries) => {
-  entries.forEach(entry => {
-    if (!entry.isIntersecting) return;
+/* ============================================================
+   SCROLL PROGRESS BAR  (written in RAF, not in scroll handler)
+   ============================================================ */
+const progressBar = document.createElement('div');
+progressBar.style.cssText = 'position:fixed;top:0;left:0;height:2px;z-index:1001;background:linear-gradient(90deg,#d97706,#ea580c,#f59e0b);width:0%;pointer-events:none;will-change:width;';
+document.body.appendChild(progressBar);
+
+function updateProgressBar() {
+  const total = document.documentElement.scrollHeight - vpH;
+  progressBar.style.width = total > 0 ? `${(scrollY / total) * 100}%` : '0%';
+}
+
+
+/* ============================================================
+   INTERSECTION OBSERVER — STANDARD REVEALS
+   ============================================================ */
+const revealObs = new IntersectionObserver(entries => {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
     const el    = entry.target;
     const delay = el.dataset.delay ? parseInt(el.dataset.delay) : 0;
     setTimeout(() => el.classList.add('in-view'), delay);
     revealObs.unobserve(el);
-  });
+  }
 }, { threshold: 0.12, rootMargin: '0px 0px -60px 0px' });
 
 document.querySelectorAll('.reveal-text').forEach(el => {
@@ -145,16 +193,13 @@ document.querySelectorAll('.reveal-text').forEach(el => {
   revealObs.observe(el);
 });
 
-document.querySelectorAll(
-  '.reveal-up, .reveal-fade, .reveal-slide-right, .reveal-card'
-).forEach(el => revealObs.observe(el));
+document.querySelectorAll('.reveal-up, .reveal-fade, .reveal-slide-right, .reveal-card').forEach(el => revealObs.observe(el));
 
 
-// ─── Animated Counters ────────────────────────
-const counterObs = new IntersectionObserver(entries => {
-  entries.forEach(e => { if (e.isIntersecting) { animateCount(e.target); counterObs.unobserve(e.target); } });
-}, { threshold: 0.5 });
-document.querySelectorAll('.stat-num').forEach(el => counterObs.observe(el));
+/* ============================================================
+   ANIMATED COUNTERS
+   ============================================================ */
+function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
 function animateCount(el) {
   const target = parseInt(el.dataset.count, 10);
   const start  = performance.now();
@@ -162,164 +207,158 @@ function animateCount(el) {
   const tick   = now => {
     const t = Math.min((now - start) / dur, 1);
     el.textContent = Math.round(easeOut(t) * target);
-    if (t < 1) requestAnimationFrame(tick);
-    else el.textContent = target;
+    if (t < 1) requestAnimationFrame(tick); else el.textContent = target;
   };
   requestAnimationFrame(tick);
 }
-function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+const counterObs = new IntersectionObserver(entries => {
+  for (const e of entries) { if (e.isIntersecting) { animateCount(e.target); counterObs.unobserve(e.target); } }
+}, { threshold: 0.5 });
+document.querySelectorAll('.stat-num').forEach(el => counterObs.observe(el));
 
 
-// ─── Parallax Orbs ───────────────────────────
-const orbs = document.querySelectorAll('.hero-orb');
-window.addEventListener('scroll', () => {
-  const sy = window.scrollY;
-  orbs.forEach((orb, i) => { orb.style.transform = `translateY(${sy * (0.08 + i * 0.04)}px)`; });
-}, { passive: true });
+/* ============================================================
+   CARD TILT  (RAF-throttled — no layout reads per mousemove)
+   ============================================================ */
+function initTilt(selector, maxDeg = 7, lift = 7) {
+  document.querySelectorAll(selector).forEach(card => {
+    let rafId = null;
+    let lastE = null;
 
+    card.addEventListener('mousemove', e => {
+      lastE = e;
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (!lastE) return;
+        const r  = card.getBoundingClientRect();
+        const dx = (lastE.clientX - (r.left + r.width  / 2)) / (r.width  / 2);
+        const dy = (lastE.clientY - (r.top  + r.height / 2)) / (r.height / 2);
+        card.style.transform  = `translateY(-${lift}px) rotateX(${-dy * maxDeg}deg) rotateY(${dx * maxDeg}deg)`;
+        card.style.transition = 'box-shadow 0.3s, border-color 0.3s';
+      });
+    });
 
-// ─── Service Card Tilt ────────────────────────
-document.querySelectorAll('.service-card').forEach(card => {
-  card.addEventListener('mousemove', e => {
-    const r  = card.getBoundingClientRect();
-    const dx = (e.clientX - (r.left + r.width  / 2)) / (r.width  / 2);
-    const dy = (e.clientY - (r.top  + r.height / 2)) / (r.height / 2);
-    card.style.transform   = `translateY(-6px) rotateX(${-dy * 6}deg) rotateY(${dx * 6}deg)`;
-    card.style.transition  = 'none';
+    card.addEventListener('mouseleave', () => {
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      lastE = null;
+      card.style.transform  = '';
+      card.style.transition = '';
+    });
   });
-  card.addEventListener('mouseleave', () => { card.style.transform = ''; card.style.transition = ''; });
-});
+}
+
+initTilt('.proj-card',    8, 8);
+initTilt('.service-card', 6, 6);
 
 
-// ─── Profile Card Reveal ──────────────────────
+/* ============================================================
+   PROFILE CARD REVEAL
+   ============================================================ */
 const profileCard = document.querySelector('.profile-card');
 if (profileCard) {
-  const profileCardObs = new IntersectionObserver(entries => {
+  new IntersectionObserver(entries => {
     if (entries[0].isIntersecting) {
       profileCard.classList.add('in-view');
-      profileCardObs.disconnect();
+      entries[0].target._obs?.disconnect();
     }
-  }, { threshold: 0.3 });
-  profileCardObs.observe(profileCard);
+  }, { threshold: 0.3 }).observe(profileCard);
 }
 
 
-// ─── Scroll Progress Bar ─────────────────────
-const progressBar = document.createElement('div');
-progressBar.style.cssText = 'position:fixed;top:0;left:0;height:2px;z-index:1001;background:linear-gradient(90deg,#d97706,#ea580c,#f59e0b);width:0%;pointer-events:none;transition:width 0.05s linear;';
-document.body.appendChild(progressBar);
-window.addEventListener('scroll', () => {
-  const total = document.documentElement.scrollHeight - window.innerHeight;
-  progressBar.style.width = `${(window.scrollY / total) * 100}%`;
-}, { passive: true });
+/* ============================================================
+   SKILL PILLS — STAGGER
+   ============================================================ */
+document.querySelectorAll('.skill-pill').forEach((pill, i) => {
+  pill.style.transitionDelay = `${i * 40}ms`;
+});
 
 
-
-// ══════════════════════════════════════════════
-//  1. HORIZONTAL SCROLL — PROJECTS
-// ══════════════════════════════════════════════
+/* ============================================================
+   1. HORIZONTAL SCROLL — PROJECTS
+   ============================================================ */
 function initHorizontalScroll() {
   const outer = document.querySelector('.h-scroll-outer');
   const track = document.getElementById('hScrollTrack');
   const bar   = document.getElementById('hScrollBar');
   if (!outer || !track) return;
 
-  const isMobile = () => window.innerWidth <= 1024;
-
   let hTarget  = 0;
   let hCurrent = 0;
   let maxX     = 0;
-  let outerTop = 0; // cached document offset — no DOM reads in hot paths
+  let outerTop = 0;
 
-  // ── Setup ─────────────────────────────────────────────────────────────────
   function setup() {
-    if (isMobile()) {
+    if (isMobile) {
       outer.style.height    = '';
       track.style.transform = 'none';
       hCurrent = hTarget = 0;
       return;
     }
-    // clientHeight matches 100dvh — excludes mobile browser chrome on Safari/Mac
-    const vh = document.documentElement.clientHeight;
-    maxX     = track.scrollWidth - window.innerWidth + 60;
-    outer.style.height = (maxX + vh) + 'px';
-    // Cache the document-absolute top of the outer div
-    outerTop = outer.getBoundingClientRect().top + window.scrollY;
+    maxX     = track.scrollWidth - vpW + 60;
+    outer.style.height = (maxX + vpH) + 'px';
+    outerTop = outer.getBoundingClientRect().top + scrollY;
   }
 
-  // Pure arithmetic — zero DOM reads
   function inZone() {
-    const sy = window.scrollY;
-    return sy >= outerTop - 2 && sy <= outerTop + maxX + 2;
+    return scrollY >= outerTop - 2 && scrollY <= outerTop + maxX + 2;
   }
 
-  // ── Wheel interception ────────────────────────────────────────────────────
-  // Consume delta into hTarget and keep scrollY in sync so the section
-  // exits the instant horizontal scroll completes.
-  // At boundaries: pass through so vertical resumes naturally.
   window.addEventListener('wheel', e => {
-    if (isMobile() || !inZone()) return;
-
+    if (isMobile || !inZone()) return;
     let delta = e.deltaY;
     if (e.deltaMode === 1) delta *= 40;
-    if (e.deltaMode === 2) delta *= document.documentElement.clientHeight;
-
-    if (delta < 0 && hTarget <= 0)    return; // at start → let page scroll up
-    if (delta > 0 && hTarget >= maxX) return; // at end   → let page scroll down
-
+    if (e.deltaMode === 2) delta *= vpH;
+    if (delta < 0 && hTarget <= 0)    return;
+    if (delta > 0 && hTarget >= maxX) return;
     e.preventDefault();
     hTarget = clamp(hTarget + delta, 0, maxX);
-
-    // Sync page scroll so the section exits when horizontal finishes
     window.scrollTo(0, outerTop + hTarget);
-
     if (bar) bar.style.width = `${(hTarget / maxX) * 100}%`;
   }, { passive: false });
 
-  // ── Keyboard / anchor-link fallback ──────────────────────────────────────
   window.addEventListener('scroll', () => {
-    if (isMobile() || !inZone()) return;
-    const scrolled = window.scrollY - outerTop;
-    hTarget = clamp(scrolled, 0, maxX);
+    if (isMobile || !inZone()) return;
+    hTarget = clamp(scrollY - outerTop, 0, maxX);
     if (bar) bar.style.width = `${(hTarget / maxX) * 100}%`;
   }, { passive: true });
 
-  // ── rAF loop — zero DOM reads, one conditional write ─────────────────────
+  /* RAF loop — lerp + progress bar update bundled here */
   function tick() {
-    if (!isMobile()) {
+    if (!isMobile) {
       const diff = hTarget - hCurrent;
       if (Math.abs(diff) > 0.05) {
         hCurrent += diff * 0.09;
-        track.style.transform = `translate3d(${-hCurrent}px, 0, 0)`;
+        track.style.transform = `translate3d(${-hCurrent}px,0,0)`;
       }
     } else if (hCurrent !== 0) {
       track.style.transform = 'none';
       hCurrent = hTarget = 0;
     }
+    updateProgressBar();
     requestAnimationFrame(tick);
   }
 
   setup();
-  window.addEventListener('load',   setup);                    // recompute after fonts/images settle
+  window.addEventListener('load',   setup);
   window.addEventListener('resize', setup, { passive: true });
   tick();
 }
 initHorizontalScroll();
 
+const hintText = document.getElementById('hScrollHintText');
+if (hintText && isMobile) hintText.textContent = 'Swipe to explore';
 
-// ══════════════════════════════════════════════
-//  2. SCROLLYTELLING — PROCESS SECTION
-// ══════════════════════════════════════════════
+
+/* ============================================================
+   2. SCROLLYTELLING — PROCESS SECTION
+   ============================================================ */
 function initScrollytelling() {
-  const section = document.querySelector('.story-section');
-  const sticky  = document.getElementById('storySticky');
-  if (!section || !sticky) return;
-
-  const isMobile = () => window.innerWidth <= 1024;
-
+  const section     = document.querySelector('.story-section');
   const visualItems = document.querySelectorAll('.story-visual-item');
   const steps       = document.querySelectorAll('.story-step');
   const dots        = document.querySelectorAll('.story-dot');
+  if (!section) return;
 
   const NUM_STEPS = steps.length;
   let lastStep = -1;
@@ -332,287 +371,121 @@ function initScrollytelling() {
     dots.forEach((d, i)        => d.classList.toggle('active', i === idx));
   }
 
-  function onScroll() {
-    if (isMobile()) return;
-    const rect     = section.getBoundingClientRect();
-    const outerH   = section.offsetHeight;
-    const scrolled = -rect.top;
-    const progress = clamp(scrolled / (outerH - window.innerHeight), 0, 1);
-    const rawIdx   = Math.floor(progress * NUM_STEPS);
-    activateStep(clamp(rawIdx, 0, NUM_STEPS - 1));
+  if (isMobile) {
+    steps.forEach((s, i) => {
+      s.style.cssText = `opacity:0;transform:translateY(30px);transition:opacity 0.6s cubic-bezier(0.16,1,0.3,1) ${i * 100}ms,transform 0.6s cubic-bezier(0.16,1,0.3,1) ${i * 100}ms`;
+    });
+    const stepObs = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) { e.target.style.opacity = '1'; e.target.style.transform = 'translateY(0)'; stepObs.unobserve(e.target); }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -30px 0px' });
+    steps.forEach(s => stepObs.observe(s));
+  } else {
+    activateStep(0);
+    window.addEventListener('scroll', () => {
+      const rect     = section.getBoundingClientRect();
+      const progress = clamp(-rect.top / (section.offsetHeight - vpH), 0, 1);
+      activateStep(clamp(Math.floor(progress * NUM_STEPS), 0, NUM_STEPS - 1));
+    }, { passive: true });
   }
 
-  activateStep(0);
-  window.addEventListener('scroll', onScroll, { passive: true });
-
   // Amber particle spawner
-  function spawnParticles(containerId) {
-    const container = document.getElementById(containerId);
+  const colors = ['rgba(217,119,6,','rgba(234,88,12,','rgba(245,158,11,','rgba(180,83,9,'];
+  if (!document.getElementById('particle-style')) {
+    const s = document.createElement('style');
+    s.id = 'particle-style';
+    s.textContent = '@keyframes particleFloat{0%,100%{transform:translateY(0) scale(1);opacity:0.4}50%{transform:translateY(-20px) scale(1.3);opacity:0.8}}';
+    document.head.appendChild(s);
+  }
+  ['svp0','svp1','svp2','svp3'].forEach(id => {
+    const container = document.getElementById(id);
     if (!container) return;
-    const colors = [
-      'rgba(217,119,6,',
-      'rgba(234,88,12,',
-      'rgba(245,158,11,',
-      'rgba(16,185,129,'
-    ];
-    const idx = parseInt(containerId.replace('svp', ''));
-    const c = colors[idx] || colors[0];
+    const c = colors[parseInt(id.replace('svp',''))] || colors[0];
     for (let i = 0; i < 12; i++) {
       const p    = document.createElement('div');
       const size = 3 + Math.random() * 5;
-      const x    = 20 + Math.random() * 60;
-      const y    = 20 + Math.random() * 60;
-      const dur  = 3 + Math.random() * 4;
-      const del  = Math.random() * 4;
-      p.style.cssText = `
-        position:absolute; left:${x}%; top:${y}%;
-        width:${size}px; height:${size}px; border-radius:50%;
-        background:${c}0.5)`;
-      p.style.animation = `particleFloat ${dur}s ease-in-out ${del}s infinite`;
+      p.style.cssText = `position:absolute;left:${20+Math.random()*60}%;top:${20+Math.random()*60}%;width:${size}px;height:${size}px;border-radius:50%;background:${c}0.5);animation:particleFloat ${3+Math.random()*4}s ease-in-out ${Math.random()*4}s infinite`;
       container.appendChild(p);
     }
-  }
-
-  if (!document.getElementById('particle-style')) {
-    const style = document.createElement('style');
-    style.id = 'particle-style';
-    style.textContent = `
-      @keyframes particleFloat {
-        0%,100% { transform: translateY(0) scale(1); opacity:0.4; }
-        50%      { transform: translateY(-20px) scale(1.3); opacity:0.8; }
-      }
-    `;
-    document.head.appendChild(style);
-  }
-  ['svp0','svp1','svp2','svp3'].forEach(spawnParticles);
+  });
 }
 initScrollytelling();
 
 
-// ══════════════════════════════════════════════
-//  3. WORD REVEAL — SCROLL-LINKED
-// ══════════════════════════════════════════════
+/* ============================================================
+   3. WORD REVEAL — SCROLL-LINKED
+   ============================================================ */
 function initWordReveal() {
   const section = document.querySelector('.word-reveal-section');
   const label   = document.querySelector('.word-reveal-label');
   const textEl  = document.getElementById('wordRevealText');
   if (!section || !textEl) return;
 
-  const raw   = textEl.textContent;
-  const words = raw.trim().split(/\s+/);
+  const words = textEl.textContent.trim().split(/\s+/);
   textEl.innerHTML = '';
+  const accentWords = new Set(['boring','3am.','hate','you.']);
 
   words.forEach((word, i) => {
     const span = document.createElement('span');
     span.classList.add('wr-word');
     span.textContent = word;
-    if (['boring','3am.','hate','you.'].includes(word.toLowerCase())) {
-      span.dataset.accent = '1';
-    }
+    if (accentWords.has(word.toLowerCase())) span.dataset.accent = '1';
     textEl.appendChild(span);
     if (i < words.length - 1) textEl.appendChild(document.createTextNode(' '));
   });
 
-  const wordEls = textEl.querySelectorAll('.wr-word');
+  const wordEls = Array.from(textEl.querySelectorAll('.wr-word'));
   const total   = wordEls.length;
+  let lastLit   = -1;
 
-  const labelObs = new IntersectionObserver(entries => {
-    if (entries[0].isIntersecting) { label.classList.add('active'); labelObs.disconnect(); }
-  }, { threshold: 0.5 });
-  if (label) labelObs.observe(section);
-
-  function onScroll() {
-    const rect     = section.getBoundingClientRect();
-    const vh       = window.innerHeight;
-    const start    = vh * 0.75;
-    const end      = vh * 0.05;
-    const progress = clamp((start - rect.top) / (start - end), 0, 1);
-    const litCount = Math.round(progress * total);
-    wordEls.forEach((w, i) => {
-      const shouldLit = i < litCount;
-      if (shouldLit && w.dataset.accent) {
-        w.classList.add('lit-accent'); w.classList.remove('lit');
-      } else {
-        w.classList.toggle('lit', shouldLit); w.classList.remove('lit-accent');
-      }
-    });
+  if (label) {
+    new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) { label.classList.add('active'); }
+    }, { threshold: 0.5 }).observe(section);
   }
 
-  window.addEventListener('scroll', onScroll, { passive: true });
-  onScroll();
+  window.addEventListener('scroll', () => {
+    const rect     = section.getBoundingClientRect();
+    const progress = clamp((vpH * 0.75 - rect.top) / (vpH * 0.70), 0, 1);
+    const litCount = Math.round(progress * total);
+    if (litCount === lastLit) return;   // skip if nothing changed
+    lastLit = litCount;
+    wordEls.forEach((w, i) => {
+      const on = i < litCount;
+      if (on && w.dataset.accent) { w.classList.add('lit-accent'); w.classList.remove('lit'); }
+      else                        { w.classList.toggle('lit', on); w.classList.remove('lit-accent'); }
+    });
+  }, { passive: true });
 }
 initWordReveal();
 
 
-// ══════════════════════════════════════════════
-//  4. HERO — SCROLL EXIT EFFECT
-// ══════════════════════════════════════════════
-// Hero is now position:sticky — subsequent sections slide over it.
-// No fade-out animation needed; the hero stays crisp and still.
-
-
-// ══════════════════════════════════════════════
-//  5. PROJECT CARDS — TILT ON HOVER
-// ══════════════════════════════════════════════
-function initProjectCards() {
-  document.querySelectorAll('.proj-card').forEach(card => {
-    card.addEventListener('mousemove', e => {
-      const r  = card.getBoundingClientRect();
-      const dx = (e.clientX - (r.left + r.width  / 2)) / (r.width  / 2);
-      const dy = (e.clientY - (r.top  + r.height / 2)) / (r.height / 2);
-      card.style.transform  = `translateY(-8px) rotateX(${-dy * 8}deg) rotateY(${dx * 8}deg) scale(1.01)`;
-      card.style.transition = 'box-shadow 0.3s, border-color 0.3s';
-    });
-    card.addEventListener('mouseleave', () => {
-      card.style.transform  = '';
-      card.style.transition = '';
-    });
-  });
-}
-initProjectCards();
-
-
-// ══════════════════════════════════════════════
-//  6. HERO CANVAS — removed
-// ══════════════════════════════════════════════
-function initHeroCanvas() { return; // canvas removed
-  const canvas = document.getElementById('heroCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-
-  let W, H, particles = [];
-  let heroMX = -9999, heroMY = -9999;
-
-  const COUNT     = 55;
-  const MAX_DIST  = 130;
-  const REPEL_R   = 90;
-  const PALETTE   = [
-    'rgba(217,119,6,',
-    'rgba(234,88,12,',
-    'rgba(245,158,11,',
-  ];
-
-  function resize() {
-    const hero = canvas.parentElement;
-    W = canvas.width  = hero.offsetWidth;
-    H = canvas.height = hero.offsetHeight;
-  }
-
-  function mkParticle() {
-    return {
-      x:  Math.random() * W,
-      y:  Math.random() * H,
-      vx: (Math.random() - 0.5) * 0.35,
-      vy: (Math.random() - 0.5) * 0.35,
-      r:  1.5 + Math.random() * 2,
-      col: PALETTE[Math.floor(Math.random() * PALETTE.length)],
-      alpha: 0.35 + Math.random() * 0.45,
-    };
-  }
-
-  function init() {
-    resize();
-    particles = Array.from({ length: COUNT }, mkParticle);
-  }
-
-  function tick() {
-    ctx.clearRect(0, 0, W, H);
-
-    for (const p of particles) {
-      // Mouse repulsion
-      const dx   = p.x - heroMX;
-      const dy   = p.y - heroMY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < REPEL_R && dist > 0) {
-        const f = ((REPEL_R - dist) / REPEL_R) * 0.9;
-        p.vx += (dx / dist) * f * 0.06;
-        p.vy += (dy / dist) * f * 0.06;
-      }
-
-      // Dampen + speed-cap
-      p.vx *= 0.99;
-      p.vy *= 0.99;
-      const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
-      if (speed > 1.4) { p.vx = (p.vx / speed) * 1.4; p.vy = (p.vy / speed) * 1.4; }
-
-      p.x += p.vx;
-      p.y += p.vy;
-
-      // Wrap
-      if (p.x < -8)  p.x = W + 8;
-      if (p.x > W+8) p.x = -8;
-      if (p.y < -8)  p.y = H + 8;
-      if (p.y > H+8) p.y = -8;
-
-      // Draw dot
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fillStyle = p.col + p.alpha + ')';
-      ctx.fill();
-    }
-
-    // Draw connecting lines
-    for (let i = 0; i < particles.length; i++) {
-      for (let j = i + 1; j < particles.length; j++) {
-        const a = particles[i], b = particles[j];
-        const dx = a.x - b.x, dy = a.y - b.y;
-        const d  = Math.sqrt(dx * dx + dy * dy);
-        if (d < MAX_DIST) {
-          ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
-          ctx.strokeStyle = `rgba(217,119,6,${(1 - d / MAX_DIST) * 0.28})`;
-          ctx.lineWidth   = 0.7;
-          ctx.stroke();
-        }
-      }
-    }
-
-    requestAnimationFrame(tick);
-  }
-
-  init();
-  window.addEventListener('resize', init);
-
-  // Track mouse in hero area
-  const hero = canvas.parentElement;
-  hero.addEventListener('mousemove', e => {
-    const r = hero.getBoundingClientRect();
-    heroMX  = e.clientX - r.left;
-    heroMY  = e.clientY - r.top;
-  });
-  hero.addEventListener('mouseleave', () => { heroMX = -9999; heroMY = -9999; });
-
-  tick();
-}
-initHeroCanvas();
-
-
-// ══════════════════════════════════════════════
-//  HERO GRADIENT BLOB — mouse tracking
-// ══════════════════════════════════════════════
+/* ============================================================
+   HERO GRADIENT BLOB — mouse tracking (RAF-based lerp)
+   ============================================================ */
 (function initHeroBlob() {
   const wrap = document.querySelector('.hero-grad-wrap');
   const ptr  = document.getElementById('heroBlobPtr');
   if (!wrap || !ptr) return;
   let curX = 0, curY = 0, tgX = 0, tgY = 0;
   window.addEventListener('mousemove', e => {
-    const rect = wrap.getBoundingClientRect();
-    tgX = e.clientX - rect.left;
-    tgY = e.clientY - rect.top;
+    const r = wrap.getBoundingClientRect();
+    tgX = e.clientX - r.left;
+    tgY = e.clientY - r.top;
   });
   (function tick() {
     curX += (tgX - curX) / 20;
     curY += (tgY - curY) / 20;
-    ptr.style.transform = `translate(${Math.round(curX)}px, ${Math.round(curY)}px)`;
+    ptr.style.transform = `translate(${Math.round(curX)}px,${Math.round(curY)}px)`;
     requestAnimationFrame(tick);
   })();
 })();
 
 
-// ══════════════════════════════════════════════
-//  7. CONTACT FORM
-// ══════════════════════════════════════════════
+/* ============================================================
+   CONTACT FORM
+   ============================================================ */
 const form        = document.getElementById('contactForm');
 const formSuccess = document.getElementById('formSuccess');
 if (form) {
@@ -631,117 +504,58 @@ if (form) {
 }
 
 
-// ══════════════════════════════════════════════
-//  8. SKILL PILLS — STAGGER
-// ══════════════════════════════════════════════
-document.querySelectorAll('.skill-pill').forEach((pill, i) => {
-  pill.style.transitionDelay = `${i * 40}ms`;
-});
-
-
-// ══════════════════════════════════════════════
-//  9. ACETERNITY TIMELINE — SCROLL-DRIVEN LINE
-// ══════════════════════════════════════════════
+/* ============================================================
+   9. ACETERNITY TIMELINE — scroll-driven line + card reveals
+   ============================================================ */
 function initAceTimeline() {
   const wrap = document.getElementById('aceTlWrap');
   const fill = document.getElementById('aceTlLineFill');
   if (!wrap || !fill) return;
 
-  // ── Card slide-in / slide-out on scroll ──
-  const cards = Array.from(wrap.querySelectorAll('.ace-tl-card'));
+  const cards  = Array.from(wrap.querySelectorAll('.ace-tl-card'));
+  const isMob  = vpW <= 768;
+
   const cardObs = new IntersectionObserver(entries => {
     entries.forEach(e => {
-      if (e.isIntersecting) {
-        // Stagger on entry
-        const idx = cards.indexOf(e.target);
-        e.target.style.transitionDelay = `${idx * 60}ms`;
-        e.target.classList.add('card-visible');
-      } else {
-        // No delay on exit — reverse immediately
-        e.target.style.transitionDelay = '0ms';
-        e.target.classList.remove('card-visible');
-      }
+      const idx = cards.indexOf(e.target);
+      e.target.style.transitionDelay = e.isIntersecting ? `${idx * 60}ms` : '0ms';
+      e.target.classList.toggle('card-visible', e.isIntersecting);
     });
-  }, { threshold: 0.12, rootMargin: '0px 0px -50px 0px' });
-
+  }, { threshold: isMob ? 0.05 : 0.12, rootMargin: isMob ? '0px 0px -20px 0px' : '0px 0px -50px 0px' });
   cards.forEach(c => cardObs.observe(c));
 
-  // ── Dot activation as each entry scrolls into focus ──
   const dotObs = new IntersectionObserver(entries => {
-    entries.forEach(e => {
-      e.target.classList.toggle('dot-active', e.isIntersecting);
-    });
+    entries.forEach(e => e.target.classList.toggle('dot-active', e.isIntersecting));
   }, { threshold: 0.35 });
-
   wrap.querySelectorAll('.ace-tl-entry').forEach(e => dotObs.observe(e));
 
-  // ── Scroll-driven vertical line fill ──
-  // Mirrors Aceternity's framer-motion useScroll offset ["start 10%", "end 50%"]
-  // Start: when wrap top reaches 10% from viewport top
-  // End  : when wrap bottom reaches 50% from viewport top
   let fillTarget  = 0;
   let fillCurrent = 0;
 
-  function updateLine() {
-    const rect   = wrap.getBoundingClientRect();
-    const vh     = window.innerHeight;
-    const wrapH  = wrap.offsetHeight;
-
-    // scrolled = how far past the 10% mark the wrap top has moved
-    const scrolled = (vh * 0.10) - rect.top;
-    // range   = distance from start to end (bottom at 50%)
-    const range    = wrapH - vh * 0.40;
-
+  window.addEventListener('scroll', () => {
+    const rect    = wrap.getBoundingClientRect();
+    const scrolled = vpH * 0.10 - rect.top;
+    const range    = wrap.offsetHeight - vpH * 0.40;
     fillTarget = clamp(scrolled / range, 0, 1) * 100;
-  }
+  }, { passive: true });
 
-  // Lerp the fill height each frame for butter-smooth motion
   (function animateLine() {
     fillCurrent = lerp(fillCurrent, fillTarget, 0.08);
     fill.style.height = fillCurrent.toFixed(2) + '%';
     requestAnimationFrame(animateLine);
   })();
-
-  window.addEventListener('scroll', updateLine, { passive: true });
-  updateLine(); // initialise
 }
 initAceTimeline();
 
 
-// ══════════════════════════════════════════════
-//  10. AMBIENT CURSOR GLOW
-// ══════════════════════════════════════════════
-function initAmbientGlow() {
-  const glow = document.createElement('div');
-  glow.style.cssText = `
-    position:fixed; width:400px; height:400px; border-radius:50%;
-    background:radial-gradient(circle, rgba(217,119,6,0.06) 0%, transparent 70%);
-    pointer-events:none; z-index:0; transform:translate(-50%,-50%);
-    transition:left 0.8s ease, top 0.8s ease; will-change:left,top;
-  `;
-  document.body.appendChild(glow);
-  document.addEventListener('mousemove', e => {
-    glow.style.left = e.clientX + 'px';
-    glow.style.top  = e.clientY + 'px';
-  });
-}
-initAmbientGlow();
-
-
-// ══════════════════════════════════════════════
-//  11. BACK TO TOP BUTTON
-// ══════════════════════════════════════════════
+/* ============================================================
+   BACK TO TOP
+   ============================================================ */
 (function initBackToTop() {
   const btn    = document.getElementById('backToTop');
   const footer = document.querySelector('.footer');
   if (!btn || !footer) return;
-
-  function update() {
-    const scrolled      = window.scrollY > 400;
-    const footerVisible = footer.getBoundingClientRect().top < window.innerHeight;
-    btn.classList.toggle('btt-visible', scrolled && !footerVisible);
-  }
-
-  window.addEventListener('scroll', update, { passive: true });
-  update();
+  window.addEventListener('scroll', () => {
+    btn.classList.toggle('btt-visible', scrollY > 400 && footer.getBoundingClientRect().top >= vpH);
+  }, { passive: true });
 })();
