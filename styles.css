@@ -1167,7 +1167,8 @@ a { text-decoration: none; color: inherit; }
   input, textarea, select { font-size: 16px !important; }
 
   /* Footer */
-  .footer-inner { gap: 14px; }
+  .footer-inner { flex-direction: column; gap: 16px; }
+  .footer-top-btn { position: static; }
 
   /* Back to top */
   .back-to-top { bottom: 20px; right: 16px; }
@@ -1235,7 +1236,7 @@ a { text-decoration: none; color: inherit; }
 
   /* Footer */
   .footer-copy { font-size: 0.8rem; }
-  .back-to-top { width: 40px; height: 40px; bottom: 16px; right: 12px; }
+  .back-to-top { width: 40px; height: 40px; bottom: 16px; right: max(12px, env(safe-area-inset-right)); }
 }
 
 /* ── Touch devices — disable custom cursor ── */
