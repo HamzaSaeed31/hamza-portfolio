@@ -1,37 +1,77 @@
-# hamza-portfolio
+# Hamza Saeed Portfolio
 
-My personal portfolio — built with plain HTML, CSS, and JS. No frameworks, no build step, just open it in a browser.
+> Personal portfolio and showcase, built with zero dependencies, maximum craft.
 
-Live at: www.hamzasaeed.me
+**Live:** [www.hamzasaeed.me](https://www.hamzasaeed.me)
 
 ---
 
-## What's in it
+## Tech Stack
 
-- Hero section with a canvas particle system, floating code glyphs, and an intro sequence on load
-- About, services, experience timeline, and contact sections
-- Horizontal scroll project showcase driven by JS lerp
-- Scrollytelling process section (sticky panel that changes as you scroll)
-- Word-by-word reveal on large text as it enters the viewport
-- Animated stat counters, 3D card tilt on hover, custom cursor with ambient glow
-- Scroll progress bar at the top
-- Mobile-responsive with a hamburger menu
+| Layer | Details |
+|---|---|
+| Markup | Semantic HTML5 |
+| Styles | Vanilla CSS, design tokens, custom properties, no utility classes |
+| Logic | Vanilla JavaScript, no frameworks, no bundler |
+| Fonts | Inter (UI) · JetBrains Mono (code elements) |
+| Deploy | Vercel, push to `master` triggers deploy |
 
-## Stack
+---
 
-- HTML / CSS / JavaScript (vanilla)
-- Inter + JetBrains Mono (Google Fonts)
-- Deployed on Vercel
+## Features
 
-## Running locally
+**Animations & Interactions**
+- Frosted-glass intro sequence on load with spinning amber ring
+- Custom cursor with lerp-smoothed follower and ambient glow
+- Scroll progress bar (amber gradient, top of viewport)
+- Intersection Observer reveal animations on every section
+- Animated stat counters on scroll-enter
+- 3D card tilt on hover (service cards + project cards)
 
-Just open `index.html` in a browser. No installs, no servers.
+**Scroll Techniques**
+- Hero parallax, canvas orb layer + content fades/lifts as you scroll out
+- Horizontal scroll project showcase, sticky pin, scroll mapped to `translateX` via lerp
+- Scrollytelling process section, sticky panel, active step tracks scroll position
+- Word-by-word reveal on large statement text
+
+**Canvas Background**
+- Amber particle constellation with proximity connecting lines and mouse repulsion
+- Ghost code glyphs drifting in the background (`{}`, `</>`, `=>`, `[]`)
+- Grain texture overlay (SVG feTurbulence)
+- Portrait blurred at very low opacity as an ambient background element
+
+**Other**
+- Mobile-responsive with hamburger nav
+- Contact form with client-side validation
+- Scroll-to-top button (fixed, fades in after first scroll)
+
+---
+
+## Project Structure
 
 ```
+portfolio/
+├── index.html          # Full page, all sections in one file
+├── styles.css          # All styles, design tokens at :root
+├── scripts.js          # All JS, single DOMContentLoaded block
+├── hamza-avatar.png    # Portrait (used in intro + hero bg)
+└── Hamza-Saeed-CV.pdf  # Downloadable CV
+```
+
+No `package.json`. No build step. No node_modules.
+
+---
+
+## Running Locally
+
+```bash
 git clone https://github.com/HamzaSaeed31/hamza-portfolio.git
 cd hamza-portfolio
-open index.html
+open index.html        # macOS
+start index.html       # Windows
 ```
+
+---
 
 ## Contact
 

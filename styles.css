@@ -1167,11 +1167,12 @@ a { text-decoration: none; color: inherit; }
   input, textarea, select { font-size: 16px !important; }
 
   /* Footer */
-  .footer-inner { flex-direction: column; gap: 16px; }
-  .footer-top-btn { position: static; }
+  .footer-inner { flex-direction: row; justify-content: space-between; gap: 16px; }
+  .footer-top-btn { position: static; flex-shrink: 0; }
+  .footer-copy { text-align: left; }
 
   /* Back to top */
-  .back-to-top { bottom: 20px; right: 16px; }
+  .back-to-top { bottom: max(20px, env(safe-area-inset-bottom)); right: 16px; }
 }
 
 /* ── Small phones (≤480px) ──────────────────── */
@@ -1236,7 +1237,7 @@ a { text-decoration: none; color: inherit; }
 
   /* Footer */
   .footer-copy { font-size: 0.8rem; }
-  .back-to-top { width: 40px; height: 40px; bottom: 16px; right: max(12px, env(safe-area-inset-right)); }
+  .back-to-top { width: 40px; height: 40px; bottom: max(16px, env(safe-area-inset-bottom)); right: max(12px, env(safe-area-inset-right)); }
 }
 
 /* ── Touch devices — disable custom cursor ── */
