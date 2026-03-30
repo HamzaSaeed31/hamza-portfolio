@@ -28,6 +28,13 @@ history.scrollRestoration = 'manual';
 window.scrollTo(0, 0);
 
 const isTouchDevice = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const isLowEnd = (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 2;
+const reducedMode = prefersReducedMotion || isLowEnd;
+
+/* Pause all RAF loops when tab is not visible */
+let pageVisible = true;
+document.addEventListener('visibilitychange', () => { pageVisible = !document.hidden; }, { passive: true });
 
 
 /* ============================================================
@@ -54,15 +61,17 @@ if (!isTouchDevice && cursorEl && cursorFollow) {
   });
 
   (function animateFollower() {
-    followerX = lerp(followerX, mouseX, 0.10);
-    followerY = lerp(followerY, mouseY, 0.10);
-    cursorFollow.style.left = followerX + 'px';
-    cursorFollow.style.top  = followerY + 'px';
+    if (pageVisible) {
+      followerX = lerp(followerX, mouseX, 0.10);
+      followerY = lerp(followerY, mouseY, 0.10);
+      cursorFollow.style.left = followerX + 'px';
+      cursorFollow.style.top  = followerY + 'px';
+    }
     requestAnimationFrame(animateFollower);
   })();
 
   document.querySelectorAll(
-    'a, button, .skill-pill, .service-card, .proj-card, .social-btn, .chip, .nav-link, .proj-link, .ace-tl-card'
+    'a, button, input, textarea, select, .skill-pill, .service-card, .proj-card, .social-btn, .chip, .nav-link, .proj-link, .ace-tl-card'
   ).forEach(el => {
     el.addEventListener('mouseenter', () => { cursorEl.classList.add('hover'); cursorFollow.classList.add('hover'); });
     el.addEventListener('mouseleave', () => { cursorEl.classList.remove('hover'); cursorFollow.classList.remove('hover'); });
@@ -199,20 +208,33 @@ document.querySelectorAll('.reveal-up, .reveal-fade, .reveal-slide-right, .revea
 /* ============================================================
    ANIMATED COUNTERS
    ============================================================ */
-function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
 function animateCount(el) {
   const target = parseInt(el.dataset.count, 10);
   const start  = performance.now();
   const dur    = 1600;
   const tick   = now => {
     const t = Math.min((now - start) / dur, 1);
-    el.textContent = Math.round(easeOut(t) * target);
+    el.textContent = Math.round(t * target);
     if (t < 1) requestAnimationFrame(tick); else el.textContent = target;
   };
   requestAnimationFrame(tick);
 }
 const counterObs = new IntersectionObserver(entries => {
-  for (const e of entries) { if (e.isIntersecting) { animateCount(e.target); counterObs.unobserve(e.target); } }
+  for (const e of entries) {
+    if (!e.isIntersecting) continue;
+    counterObs.unobserve(e.target);
+    const el = e.target;
+    // Delay start until the nearest reveal ancestor has finished its entrance transition,
+    // so counting is visible rather than completing while the element is still invisible.
+    const revealEl = el.closest('.reveal-fade, .reveal-up, .reveal-slide-right, .reveal-card');
+    let startDelay = 0;
+    if (revealEl) {
+      const cs = getComputedStyle(revealEl);
+      startDelay = (parseFloat(cs.transitionDelay)    || 0) * 1000
+                 + (parseFloat(cs.transitionDuration)  || 0) * 1000 * 0.3;
+    }
+    setTimeout(() => animateCount(el), startDelay);
+  }
 }, { threshold: 0.5 });
 document.querySelectorAll('.stat-num').forEach(el => counterObs.observe(el));
 
@@ -248,8 +270,10 @@ function initTilt(selector, maxDeg = 7, lift = 7) {
   });
 }
 
-initTilt('.proj-card',    8, 8);
-initTilt('.service-card', 6, 6);
+if (!reducedMode) {
+  initTilt('.proj-card',    8, 8);
+  initTilt('.service-card', 6, 6);
+}
 
 
 /* ============================================================
@@ -295,47 +319,34 @@ function initHorizontalScroll() {
       hCurrent = hTarget = 0;
       return;
     }
-    maxX     = track.scrollWidth - vpW + 60;
+    maxX     = Math.max(0, track.scrollWidth - vpW);
     outer.style.height = (maxX + vpH) + 'px';
-    outerTop = outer.getBoundingClientRect().top + scrollY;
+    outerTop = outer.getBoundingClientRect().top + window.scrollY;
+    // Sync hTarget immediately so position is correct after resize
+    hTarget = clamp(window.scrollY - outerTop, 0, maxX);
   }
-
-  function inZone() {
-    return scrollY >= outerTop - 2 && scrollY <= outerTop + maxX + 2;
-  }
-
-  window.addEventListener('wheel', e => {
-    if (isMobile || !inZone()) return;
-    let delta = e.deltaY;
-    if (e.deltaMode === 1) delta *= 40;
-    if (e.deltaMode === 2) delta *= vpH;
-    if (delta < 0 && hTarget <= 0)    return;
-    if (delta > 0 && hTarget >= maxX) return;
-    e.preventDefault();
-    hTarget = clamp(hTarget + delta, 0, maxX);
-    window.scrollTo(0, outerTop + hTarget);
-    if (bar) bar.style.width = `${(hTarget / maxX) * 100}%`;
-  }, { passive: false });
 
   window.addEventListener('scroll', () => {
-    if (isMobile || !inZone()) return;
+    if (isMobile || maxX <= 0) return;
     hTarget = clamp(scrollY - outerTop, 0, maxX);
     if (bar) bar.style.width = `${(hTarget / maxX) * 100}%`;
   }, { passive: true });
 
-  /* RAF loop — lerp + progress bar update bundled here */
+  /* RAF loop — lerp + progress bar update */
   function tick() {
-    if (!isMobile) {
-      const diff = hTarget - hCurrent;
-      if (Math.abs(diff) > 0.05) {
-        hCurrent += diff * 0.09;
-        track.style.transform = `translate3d(${-hCurrent}px,0,0)`;
+    if (pageVisible) {
+      if (!isMobile && maxX > 0) {
+        const diff = hTarget - hCurrent;
+        if (Math.abs(diff) > 0.05) {
+          hCurrent += diff * 0.09;
+          track.style.transform = `translate3d(${-hCurrent}px,0,0)`;
+        }
+      } else if (hCurrent !== 0) {
+        track.style.transform = 'none';
+        hCurrent = hTarget = 0;
       }
-    } else if (hCurrent !== 0) {
-      track.style.transform = 'none';
-      hCurrent = hTarget = 0;
+      updateProgressBar();
     }
-    updateProgressBar();
     requestAnimationFrame(tick);
   }
 
@@ -371,44 +382,36 @@ function initScrollytelling() {
     dots.forEach((d, i)        => d.classList.toggle('active', i === idx));
   }
 
-  if (isMobile) {
-    steps.forEach((s, i) => {
-      s.style.cssText = `opacity:0;transform:translateY(30px);transition:opacity 0.6s cubic-bezier(0.16,1,0.3,1) ${i * 100}ms,transform 0.6s cubic-bezier(0.16,1,0.3,1) ${i * 100}ms`;
-    });
-    const stepObs = new IntersectionObserver(entries => {
-      entries.forEach(e => {
-        if (e.isIntersecting) { e.target.style.opacity = '1'; e.target.style.transform = 'translateY(0)'; stepObs.unobserve(e.target); }
-      });
-    }, { threshold: 0.1, rootMargin: '0px 0px -30px 0px' });
-    steps.forEach(s => stepObs.observe(s));
-  } else {
-    activateStep(0);
-    window.addEventListener('scroll', () => {
-      const rect     = section.getBoundingClientRect();
-      const progress = clamp(-rect.top / (section.offsetHeight - vpH), 0, 1);
-      activateStep(clamp(Math.floor(progress * NUM_STEPS), 0, NUM_STEPS - 1));
-    }, { passive: true });
-  }
+  activateStep(0);
+  let sectionTop = section.offsetTop;
+  let sectionH   = section.offsetHeight;
+  window.addEventListener('resize', () => { sectionTop = section.offsetTop; sectionH = section.offsetHeight; }, { passive: true });
+  window.addEventListener('scroll', () => {
+    const progress = clamp((scrollY - sectionTop) / (sectionH - vpH), 0, 1);
+    activateStep(clamp(Math.floor(progress * NUM_STEPS), 0, NUM_STEPS - 1));
+  }, { passive: true });
 
-  // Amber particle spawner
-  const colors = ['rgba(217,119,6,','rgba(234,88,12,','rgba(245,158,11,','rgba(180,83,9,'];
-  if (!document.getElementById('particle-style')) {
-    const s = document.createElement('style');
-    s.id = 'particle-style';
-    s.textContent = '@keyframes particleFloat{0%,100%{transform:translateY(0) scale(1);opacity:0.4}50%{transform:translateY(-20px) scale(1.3);opacity:0.8}}';
-    document.head.appendChild(s);
-  }
-  ['svp0','svp1','svp2','svp3'].forEach(id => {
-    const container = document.getElementById(id);
-    if (!container) return;
-    const c = colors[parseInt(id.replace('svp',''))] || colors[0];
-    for (let i = 0; i < 12; i++) {
-      const p    = document.createElement('div');
-      const size = 3 + Math.random() * 5;
-      p.style.cssText = `position:absolute;left:${20+Math.random()*60}%;top:${20+Math.random()*60}%;width:${size}px;height:${size}px;border-radius:50%;background:${c}0.5);animation:particleFloat ${3+Math.random()*4}s ease-in-out ${Math.random()*4}s infinite`;
-      container.appendChild(p);
+  // Amber particle spawner — skip on low-end to reduce compositing load
+  if (!isLowEnd) {
+    const colors = ['rgba(217,119,6,','rgba(234,88,12,','rgba(245,158,11,','rgba(180,83,9,'];
+    if (!document.getElementById('particle-style')) {
+      const s = document.createElement('style');
+      s.id = 'particle-style';
+      s.textContent = '@keyframes particleFloat{0%,100%{transform:translateY(0) scale(1);opacity:0.4}50%{transform:translateY(-20px) scale(1.3);opacity:0.8}}';
+      document.head.appendChild(s);
     }
-  });
+    ['svp0','svp1','svp2','svp3'].forEach(id => {
+      const container = document.getElementById(id);
+      if (!container) return;
+      const c = colors[parseInt(id.replace('svp',''))] || colors[0];
+      for (let i = 0; i < 8; i++) {
+        const p    = document.createElement('div');
+        const size = 3 + Math.random() * 5;
+        p.style.cssText = `position:absolute;left:${20+Math.random()*60}%;top:${20+Math.random()*60}%;width:${size}px;height:${size}px;border-radius:50%;background:${c}0.5);animation:particleFloat ${3+Math.random()*4}s ease-in-out ${Math.random()*4}s infinite`;
+        container.appendChild(p);
+      }
+    });
+  }
 }
 initScrollytelling();
 
@@ -445,11 +448,12 @@ function initWordReveal() {
     }, { threshold: 0.5 }).observe(section);
   }
 
+  let sectionTop = section.offsetTop;
+  window.addEventListener('resize', () => { sectionTop = section.offsetTop; }, { passive: true });
   window.addEventListener('scroll', () => {
-    const rect     = section.getBoundingClientRect();
-    const progress = clamp((vpH * 0.75 - rect.top) / (vpH * 0.70), 0, 1);
+    const progress = clamp((scrollY - sectionTop + vpH * 0.75) / (vpH * 0.70), 0, 1);
     const litCount = Math.round(progress * total);
-    if (litCount === lastLit) return;   // skip if nothing changed
+    if (litCount === lastLit) return;
     lastLit = litCount;
     wordEls.forEach((w, i) => {
       const on = i < litCount;
@@ -465,6 +469,7 @@ initWordReveal();
    HERO GRADIENT BLOB — mouse tracking (RAF-based lerp)
    ============================================================ */
 (function initHeroBlob() {
+  if (reducedMode || isTouchDevice) return;
   const wrap = document.querySelector('.hero-grad-wrap');
   const ptr  = document.getElementById('heroBlobPtr');
   if (!wrap || !ptr) return;
@@ -475,9 +480,11 @@ initWordReveal();
     tgY = e.clientY - r.top;
   });
   (function tick() {
-    curX += (tgX - curX) / 20;
-    curY += (tgY - curY) / 20;
-    ptr.style.transform = `translate(${Math.round(curX)}px,${Math.round(curY)}px)`;
+    if (pageVisible) {
+      curX += (tgX - curX) / 20;
+      curY += (tgY - curY) / 20;
+      ptr.style.transform = `translate(${Math.round(curX)}px,${Math.round(curY)}px)`;
+    }
     requestAnimationFrame(tick);
   })();
 })();
@@ -489,17 +496,32 @@ initWordReveal();
 const form        = document.getElementById('contactForm');
 const formSuccess = document.getElementById('formSuccess');
 if (form) {
-  form.addEventListener('submit', e => {
+  form.addEventListener('submit', async e => {
     e.preventDefault();
     const btn  = form.querySelector('button[type="submit"]');
     const span = btn.querySelector('span');
     btn.disabled = true; span.textContent = 'Sending...';
-    setTimeout(() => {
-      span.textContent = 'Send Message'; btn.disabled = false;
-      form.reset();
-      formSuccess.classList.add('show');
-      setTimeout(() => formSuccess.classList.remove('show'), 4000);
-    }, 1400);
+    try {
+      const res = await fetch('https://formspree.io/f/mjgpwvak', {
+        method: 'POST',
+        headers: { 'Accept': 'application/json' },
+        body: new FormData(form),
+      });
+      if (res.ok) {
+        form.reset();
+        formSuccess.classList.add('show');
+        setTimeout(() => formSuccess.classList.remove('show'), 4000);
+      } else {
+        span.textContent = 'Failed — try again';
+        btn.disabled = false;
+      }
+    } catch {
+      span.textContent = 'Failed — try again';
+      btn.disabled = false;
+    }
+    if (!btn.disabled) return;
+    span.textContent = 'Send Message';
+    btn.disabled = false;
   });
 }
 
@@ -531,17 +553,20 @@ function initAceTimeline() {
 
   let fillTarget  = 0;
   let fillCurrent = 0;
+  let wrapTop  = wrap.offsetTop;
+  let wrapH    = wrap.offsetHeight;
+  window.addEventListener('resize', () => { wrapTop = wrap.offsetTop; wrapH = wrap.offsetHeight; }, { passive: true });
 
   window.addEventListener('scroll', () => {
-    const rect    = wrap.getBoundingClientRect();
-    const scrolled = vpH * 0.10 - rect.top;
-    const range    = wrap.offsetHeight - vpH * 0.40;
-    fillTarget = clamp(scrolled / range, 0, 1) * 100;
+    const range = wrapH - vpH * 0.40;
+    fillTarget = clamp((scrollY - wrapTop + vpH * 0.10) / range, 0, 1) * 100;
   }, { passive: true });
 
   (function animateLine() {
-    fillCurrent = lerp(fillCurrent, fillTarget, 0.08);
-    fill.style.height = fillCurrent.toFixed(2) + '%';
+    if (pageVisible) {
+      fillCurrent = lerp(fillCurrent, fillTarget, 0.08);
+      fill.style.height = fillCurrent.toFixed(2) + '%';
+    }
     requestAnimationFrame(animateLine);
   })();
 }
