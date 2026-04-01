@@ -382,6 +382,8 @@ function initScrollytelling() {
     dots.forEach((d, i)        => d.classList.toggle('active', i === idx));
   }
 
+  dots.forEach((d, i) => d.addEventListener('click', () => activateStep(i)));
+
   activateStep(0);
   let sectionTop = section.offsetTop;
   let sectionH   = section.offsetHeight;
